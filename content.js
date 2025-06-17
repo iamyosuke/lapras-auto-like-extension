@@ -41,7 +41,15 @@ let shouldStop = false;
 // 現在のページ番号を取得
 function getCurrentPageNumber() {
   const urlParams = new URLSearchParams(window.location.search);
-  return parseInt(urlParams.get('page')) || 1;
+  const pageParam = urlParams.get('page');
+  
+  // pageパラメーターがない場合は1ページ目とする
+  if (!pageParam) {
+    return 1;
+  }
+  
+  const pageNumber = parseInt(pageParam);
+  return isNaN(pageNumber) ? 1 : pageNumber;
 }
 
 // 次のページのURLを生成
@@ -137,9 +145,14 @@ async function clickAllLikeButtons() {
       successCount++;
     }
     
-    // 次のクリックまで待機
+    // 最初のクリック以外は待機時間を設ける
     if (i < buttons.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, CONFIG.clickDelay));
+      // 最初のボタン（i=0）の後はdelayを適用
+      if (i === 0) {
+        console.log('First button clicked, no delay for next click');
+      } else {
+        await new Promise(resolve => setTimeout(resolve, CONFIG.clickDelay));
+      }
     }
   }
 
@@ -151,6 +164,8 @@ async function clickAllLikeButtons() {
 function goToNextPage() {
   try {
     const currentSite = getCurrentSite();
+    const currentPage = getCurrentPageNumber();
+    console.log(`Current page number: ${currentPage}`);
     
     if (currentSite === 'findy') {
       // Findy: 次へボタンまたはページネーションを探す
@@ -163,10 +178,10 @@ function goToNextPage() {
       
       // 次へボタンが見つからない場合は、ページ番号を上げてURLを変更
       const currentUrl = new URL(window.location.href);
-      const currentPage = getCurrentPageNumber();
       const nextPage = currentPage + 1;
       currentUrl.searchParams.set('page', nextPage);
-      console.log(`Moving to next page via URL: ${currentUrl.toString()}`);
+      console.log(`Moving from page ${currentPage} to page ${nextPage}`);
+      console.log(`Next page URL: ${currentUrl.toString()}`);
       
       // より安全なページ遷移
       setTimeout(() => {
@@ -175,7 +190,8 @@ function goToNextPage() {
     } else {
       // LAPRAS: 従来の方法
       const nextPageUrl = getNextPageUrl();
-      console.log(`Moving to next page: ${nextPageUrl}`);
+      console.log(`Moving from page ${currentPage} to page ${currentPage + 1}`);
+      console.log(`Next page URL: ${nextPageUrl}`);
       setTimeout(() => {
         window.location.href = nextPageUrl;
       }, 1000);
@@ -227,14 +243,15 @@ async function main(customSettings = null) {
   try {
     const success = await clickAllLikeButtons();
     
-    if (success && !shouldStop) {
-      console.log('All buttons clicked, moving to next page');
-      
-      if (!shouldStop) {
-        goToNextPage();
+    if (!shouldStop) {
+      if (success) {
+        console.log('All buttons clicked, moving to next page');
+      } else {
+        console.log('No buttons found or clicked, but still moving to next page');
       }
+      goToNextPage();
     } else {
-      console.log('No buttons were clicked or process was stopped, staying on current page');
+      console.log('Process was stopped, staying on current page');
     }
   } catch (error) {
     console.error('Error in main process:', error);
