@@ -279,6 +279,7 @@ async function processForkwellApplications() {
       console.log(`Failed or skipped application for: ${firstJob.url}`);
     }
     
+    
     // 処理済み会社として記録（成功・失敗に関わらず）
     await recordProcessedCompany(company);
     
