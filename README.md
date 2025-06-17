@@ -1,12 +1,17 @@
-# LAPRAS Auto Like Chrome Extension
+# Auto Like for Job Sites Chrome Extension
 
-LAPRAS求人サイトで自動的に「興味あり」ボタンを押すChrome拡張機能です。
+LAPRAS・Findy求人サイトで自動的に「いいね」ボタンを押すChrome拡張機能です。
+
+## 対応サイト
+
+- **LAPRAS** (https://lapras.com) - 「興味あり」ボタンを自動クリック
+- **Findy** (https://findy-code.io, https://findy.co.jp) - 「いいかも」ボタンを自動クリック
 
 ## 機能
 
-- LAPRAS求人検索ページで「興味あり」ボタンを自動的にクリック
+- 各求人サイトで対応するいいねボタンを自動的にクリック
 - すべてのボタンをクリック後、自動的に次のページに移動
-- クリック間隔とページ移動間隔の調整可能
+- サイト別の最適化された設定（クリック間隔、ページ遷移待機時間）
 - 自動開始機能のオン/オフ切り替え
 - 手動での開始/停止制御
 
@@ -22,13 +27,15 @@ LAPRAS求人サイトで自動的に「興味あり」ボタンを押すChrome�
 
 ### 自動実行（推奨）
 
-1. LAPRAS求人検索ページ（https://lapras.com/jobs/search）にアクセス
-2. 拡張機能が自動的に「興味あり」ボタンをクリック開始
+1. 対応する求人サイトにアクセス
+   - LAPRAS: https://lapras.com/jobs/search
+   - Findy: https://findy-code.io または https://findy.co.jp
+2. 拡張機能が自動的にいいねボタンをクリック開始
 3. すべてのボタンをクリック後、自動的に次のページに移動
 
 ### 手動実行
 
-1. LAPRAS求人検索ページにアクセス
+1. 対応する求人サイトにアクセス
 2. 拡張機能のアイコンをクリックしてポップアップを開く
 3. 「Start Auto Like」ボタンをクリック
 4. 必要に応じて「Stop」ボタンで停止
@@ -41,29 +48,41 @@ LAPRAS求人サイトで自動的に「興味あり」ボタンを押すChrome�
 - **Next Page Delay**: ページ遷移後の待機時間（ミリ秒）
 - **Auto Start**: ページ読み込み時の自動開始のオン/オフ
 
-## 対象要素
+## サイト別の対象要素
 
-以下のHTML要素を自動的に検出してクリックします：
-
+### LAPRAS
 ```html
-<li data-v-44ff4845="" class="reaction-btn-wrap">
-  <button data-v-ef3a5852="" data-v-48b1cc01="" data-v-44ff4845="" 
-          class="button mini-mode reaction-btn skin-primary-line size-m flat-button">
-    <div data-v-ef3a5852="" class="body">
-      <div data-v-48b1cc01="" class="row">
-        <span data-v-48b1cc01="" class="left-icon">
-          <i data-v-d54d8182="" data-v-44ff4845="" class="icon"></i>
-        </span>
-        <span data-v-48b1cc01="" class="label">興味あり</span>
-      </div>
-    </div>
+<li class="reaction-btn-wrap">
+  <button class="reaction-btn">
+    <span class="label">興味あり</span>
   </button>
 </li>
 ```
 
+### Findy
+```html
+<button data-variant="primary" data-sub-variant="positive" class="button-v2_component_buttonV2__XAGZT">
+  いいかも
+</button>
+```
+
+## サイト別設定
+
+拡張機能は各サイトに最適化された設定を自動的に適用します：
+
+### LAPRAS
+- クリック間隔: 1000ms
+- ページ遷移待機: 10000ms
+- ボタンセレクター: `li.reaction-btn-wrap button.reaction-btn`
+
+### Findy
+- クリック間隔: 1500ms
+- ページ遷移待機: 8000ms
+- ボタンセレクター: `button[data-variant="primary"][data-sub-variant="positive"]`
+
 ## 注意事項
 
-- この拡張機能はLAPRAS求人検索ページ（https://lapras.com/jobs/search*）でのみ動作します
+- この拡張機能は対応する求人サイトでのみ動作します
 - サイトの利用規約を遵守してご使用ください
 - 過度な使用はサーバーに負荷をかける可能性があるため、適切な間隔を設定してください
 - 自己責任でご使用ください
@@ -79,14 +98,14 @@ LAPRAS求人サイトで自動的に「興味あり」ボタンを押すChrome�
 ### ボタンが見つからない場合
 
 - ページが完全に読み込まれるまで待ってください
-- LAPRASのサイト構造が変更された可能性があります
+- サイトの構造が変更された可能性があります
 
 ## ファイル構成
 
 ```
 lapras-extension/
 ├── manifest.json      # 拡張機能の設定ファイル
-├── content.js         # メインの自動化スクリプト
+├── content.js         # メインの自動化スクリプト（両サイト対応）
 ├── popup.html         # ポップアップUI
 ├── popup.js           # ポップアップの動作制御
 ├── background.js      # バックグラウンドスクリプト（通信制御）
@@ -95,15 +114,37 @@ lapras-extension/
 
 ## 開発者向け情報
 
+### サイト判定
+
+拡張機能は`window.location.hostname`を使用してサイトを自動判定し、適切な設定を適用します。
+
 ### 主要な設定
 
-- `buttonSelector`: 対象ボタンのCSSセレクター
-- `clickDelay`: ボタンクリック間隔（デフォルト: 1000ms）
-- `nextPageDelay`: 次ページ移動待機時間（デフォルト: 2000ms）
+```javascript
+const SITE_CONFIGS = {
+  lapras: {
+    buttonSelector: 'li.reaction-btn-wrap button.reaction-btn',
+    buttonTextFilter: '興味あり',
+    clickDelay: 1000,
+    nextPageDelay: 10000
+  },
+  findy: {
+    buttonSelector: 'button[data-variant="primary"][data-sub-variant="positive"]',
+    buttonTextFilter: 'いいかも',
+    clickDelay: 1500,
+    nextPageDelay: 8000
+  }
+};
+```
 
 ### カスタマイズ
 
-`content.js`の`CONFIG`オブジェクトを編集することで、動作をカスタマイズできます。
+`content.js`の`SITE_CONFIGS`オブジェクトを編集することで、各サイトの動作をカスタマイズできます。
+
+## 更新履歴
+
+- **v1.1**: Findy対応を追加
+- **v1.0**: LAPRAS対応の初期リリース
 
 ## ライセンス
 

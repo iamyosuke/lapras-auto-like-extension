@@ -1,19 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "LAPRAS Auto Like",
-  "version": "1.0",
-  "description": "LAPRAS求人サイトで自動的にいいねボタンを押すChrome拡張機能",
+  "name": "Auto Like for Job Sites",
+  "version": "1.1",
+  "description": "LAPRAS・Findy求人サイトで自動的にいいねボタンを押すChrome拡張機能",
   "permissions": [
     "activeTab",
     "scripting",
     "storage"
   ],
   "host_permissions": [
-    "https://lapras.com/*"
+    "https://lapras.com/*",
+    "https://findy-code.io/*",
+    "https://findy.co.jp/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://lapras.com/jobs/search*"],
+      "matches": [
+        "https://lapras.com/jobs/search*",
+        "https://findy-code.io/*",
+        "https://findy.co.jp/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
@@ -23,6 +29,6 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "LAPRAS Auto Like"
+    "default_title": "Auto Like for Job Sites"
   }
 }

@@ -1,3 +1,5 @@
+import { isSupportedSite } from "./background";
+
 // Popup script for LAPRAS Auto Like extension
 document.addEventListener('DOMContentLoaded', function() {
   const startBtn = document.getElementById('startBtn');
@@ -52,8 +54,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       
       // LAPRASのジョブ検索ページかチェック
-      if (!tab.url.includes('lapras.com/jobs/search')) {
-        updateStatus('Please navigate to LAPRAS job search page first', 'error');
+      if (!isSupportedSite(tab.url)) {
+        updateStatus('Please navigate to LAPRAS or Findy job search page first', 'error');
         return;
       }
 

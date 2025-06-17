@@ -1,14 +1,38 @@
-// LAPRAS Auto Like Content Script
-console.log('LAPRAS Auto Like content script loaded on:', window.location.href);
+// Auto Like Content Script for LAPRAS and Findy
+console.log('Auto Like content script loaded on:', window.location.href);
 console.log('Document ready state:', document.readyState);
 
-// 設定
-let CONFIG = {
-  buttonSelector: 'li.reaction-btn-wrap button.reaction-btn',
-  clickDelay: 1000, // 1秒間隔でクリック
-  nextPageDelay: 10000, // ページ遷移後の待機時間
-  maxRetries: 3 // 最大リトライ回数
+// サイト判定
+function getCurrentSite() {
+  const hostname = window.location.hostname;
+  if (hostname.includes('lapras.com')) {
+    return 'lapras';
+  } else if (hostname.includes('findy-code.io') || hostname.includes('findy.co.jp')) {
+    return 'findy';
+  }
+  return 'unknown';
+}
+
+// サイト別設定
+const SITE_CONFIGS = {
+  lapras: {
+    buttonSelector: 'li.reaction-btn-wrap button.reaction-btn',
+    buttonTextFilter: '興味あり',
+    clickDelay: 1000,
+    nextPageDelay: 10000,
+    maxRetries: 3
+  },
+  findy: {
+    buttonSelector: 'button[data-variant="primary"][data-sub-variant="positive"]',
+    buttonTextFilter: 'いいかも',
+    clickDelay: 1500,
+    nextPageDelay: 8000,
+    maxRetries: 3
+  }
 };
+
+// 現在のサイトに応じた設定を取得
+let CONFIG = SITE_CONFIGS[getCurrentSite()] || SITE_CONFIGS.lapras;
 
 // 実行状態管理
 let isRunning = false;
@@ -28,14 +52,30 @@ function getNextPageUrl() {
   return currentUrl.toString();
 }
 
-// いいねボタンを見つける
+// いいねボタンを見つける（サイト別対応）
 function findLikeButtons() {
   const buttons = document.querySelectorAll(CONFIG.buttonSelector);
-  console.log(`Found ${buttons.length} like buttons`);
+  console.log(`Found ${buttons.length} potential buttons`);
+  
+  const currentSite = getCurrentSite();
+  
   return Array.from(buttons).filter(button => {
-    // 「興味あり」テキストを含むボタンのみを対象とする
-    const labelElement = button.querySelector('.label');
-    return labelElement && labelElement.textContent.trim() === '興味あり';
+    // disabledでないことを確認
+    if (button.disabled) {
+      console.log('Button is disabled, skipping');
+      return false;
+    }
+    
+    if (currentSite === 'lapras') {
+      // LAPRAS: 「興味あり」テキストを含むボタンのみを対象とする
+      const labelElement = button.querySelector('.label');
+      return labelElement && labelElement.textContent.trim() === CONFIG.buttonTextFilter;
+    } else if (currentSite === 'findy') {
+      // Findy: 「いいかも」テキストを含むボタンのみを対象とする
+      const buttonText = button.textContent.trim();
+      return buttonText.includes(CONFIG.buttonTextFilter);
+    }
+    return false;
   });
 }
 
@@ -107,11 +147,31 @@ async function clickAllLikeButtons() {
   return successCount > 0;
 }
 
-// 次のページに移動
+// 次のページに移動（サイト別対応）
 function goToNextPage() {
-  const nextPageUrl = getNextPageUrl();
-  console.log(`Moving to next page: ${nextPageUrl}`);
-  window.location.href = nextPageUrl;
+  const currentSite = getCurrentSite();
+  
+  if (currentSite === 'findy') {
+    // Findy: 次へボタンまたはページネーションを探す
+    const nextButton = document.querySelector('button[aria-label="次のページ"], a[aria-label="次のページ"], .pagination .next, button:contains("次へ")');
+    if (nextButton && !nextButton.disabled) {
+      console.log('Found next button, clicking it');
+      nextButton.click();
+      return;
+    }
+    
+    // 次へボタンが見つからない場合は、ページ番号を上げてURLを変更
+    const currentUrl = new URL(window.location.href);
+    const currentPage = getCurrentPageNumber();
+    currentUrl.searchParams.set('page', currentPage + 1);
+    console.log(`Moving to next page via URL: ${currentUrl.toString()}`);
+    window.location.href = currentUrl.toString();
+  } else {
+    // LAPRAS: 従来の方法
+    const nextPageUrl = getNextPageUrl();
+    console.log(`Moving to next page: ${nextPageUrl}`);
+    window.location.href = nextPageUrl;
+  }
 }
 
 // ページ遷移後の待機処理
@@ -131,7 +191,8 @@ async function main(customSettings = null) {
   isRunning = true;
   shouldStop = false;
   
-  console.log('Starting LAPRAS Auto Like process');
+  const currentSite = getCurrentSite();
+  console.log(`Starting Auto Like process for ${currentSite.toUpperCase()}`);
   
   // カスタム設定があれば適用
   if (customSettings) {
