@@ -149,28 +149,42 @@ async function clickAllLikeButtons() {
 
 // 次のページに移動（サイト別対応）
 function goToNextPage() {
-  const currentSite = getCurrentSite();
-  
-  if (currentSite === 'findy') {
-    // Findy: 次へボタンまたはページネーションを探す
-    const nextButton = document.querySelector('button[aria-label="次のページ"], a[aria-label="次のページ"], .pagination .next, button:contains("次へ")');
-    if (nextButton && !nextButton.disabled) {
-      console.log('Found next button, clicking it');
-      nextButton.click();
-      return;
-    }
+  try {
+    const currentSite = getCurrentSite();
     
-    // 次へボタンが見つからない場合は、ページ番号を上げてURLを変更
-    const currentUrl = new URL(window.location.href);
-    const currentPage = getCurrentPageNumber();
-    currentUrl.searchParams.set('page', currentPage + 1);
-    console.log(`Moving to next page via URL: ${currentUrl.toString()}`);
-    window.location.href = currentUrl.toString();
-  } else {
-    // LAPRAS: 従来の方法
-    const nextPageUrl = getNextPageUrl();
-    console.log(`Moving to next page: ${nextPageUrl}`);
-    window.location.href = nextPageUrl;
+    if (currentSite === 'findy') {
+      // Findy: 次へボタンまたはページネーションを探す
+      const nextButton = document.querySelector('button[aria-label="次のページ"], a[aria-label="次のページ"], .pagination .next');
+      if (nextButton && !nextButton.disabled) {
+        console.log('Found next button, clicking it');
+        nextButton.click();
+        return;
+      }
+      
+      // 次へボタンが見つからない場合は、ページ番号を上げてURLを変更
+      const currentUrl = new URL(window.location.href);
+      const currentPage = getCurrentPageNumber();
+      const nextPage = currentPage + 1;
+      currentUrl.searchParams.set('page', nextPage);
+      console.log(`Moving to next page via URL: ${currentUrl.toString()}`);
+      
+      // より安全なページ遷移
+      setTimeout(() => {
+        window.location.href = currentUrl.toString();
+      }, 1000);
+    } else {
+      // LAPRAS: 従来の方法
+      const nextPageUrl = getNextPageUrl();
+      console.log(`Moving to next page: ${nextPageUrl}`);
+      setTimeout(() => {
+        window.location.href = nextPageUrl;
+      }, 1000);
+    }
+  } catch (error) {
+    console.error('Error in goToNextPage:', error);
+    // エラーが発生した場合は処理を停止
+    shouldStop = true;
+    isRunning = false;
   }
 }
 

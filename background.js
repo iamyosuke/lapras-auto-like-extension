@@ -10,8 +10,10 @@ chrome.runtime.onInstalled.addListener(() => {
 function isSupportedSite(url) {
   if (!url) return false;
   return url.includes('lapras.com/jobs/search') || 
-         url.includes('findy-code.io') || 
-         url.includes('findy.co.jp');
+         url.includes('findy-code.io/recommends') || 
+         url.includes('findy-code.io/jobs') ||
+         url.includes('findy.co.jp/recommends') || 
+         url.includes('findy.co.jp/jobs');
 }
 
 // メッセージの中継処理
@@ -39,12 +41,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.log('Tab URL:', tab.url);
             console.log('Tab status:', tab.status);
             
-            // Content scriptが読み込まれていない可能性がある場合の対処
-            if (errorMessage.includes('Could not establish connection')) {
-              sendResponse({ error: 'Content script not loaded. Please refresh the page and try again.' });
-            } else {
-              sendResponse({ error: errorMessage });
-            }
+         
           } else {
             console.log('Message sent successfully, response:', response);
             sendResponse(response || { status: 'no_response' });

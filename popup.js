@@ -4,8 +4,10 @@
 function isSupportedSite(url) {
   if (!url) return false;
   return url.includes('lapras.com/jobs/search') || 
-         url.includes('findy-code.io') || 
-         url.includes('findy.co.jp');
+         url.includes('findy-code.io/recommends') || 
+         url.includes('findy-code.io/jobs') ||
+         url.includes('findy.co.jp/recommends') || 
+         url.includes('findy.co.jp/jobs');
 }
 document.addEventListener('DOMContentLoaded', function() {
   const startBtn = document.getElementById('startBtn');

@@ -17,8 +17,10 @@
     {
       "matches": [
         "https://lapras.com/jobs/search*",
-        "https://findy-code.io/*",
-        "https://findy.co.jp/*"
+        "https://findy-code.io/recommends*",
+        "https://findy-code.io/jobs*",
+        "https://findy.co.jp/recommends*",
+        "https://findy.co.jp/jobs*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
