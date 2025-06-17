@@ -21,6 +21,18 @@ function isSupportedSite(url) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request);
   
+  // content scriptからのURL更新通知を処理
+  if (request.action === 'updateUrlCount') {
+    console.log('URL count update received:', request.data);
+    // popupが開いている場合は転送、開いていない場合は無視
+    chrome.runtime.sendMessage(request).catch(() => {
+      // popupが開いていない場合のエラーを無視
+      console.log('Popup not available for URL count update');
+    });
+    sendResponse({ status: 'received' });
+    return;
+  }
+  
   // popupからcontent scriptへのメッセージを中継
   if (request.action === 'startAutoLike' || request.action === 'stopAutoLike' || request.action === 'startForkwellApplications') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

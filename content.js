@@ -45,6 +45,28 @@ let CONFIG = SITE_CONFIGS[getCurrentSite()] || SITE_CONFIGS.lapras;
 // 実行状態管理
 let isRunning = false;
 let shouldStop = false;
+let isForkwellApplicationMode = false;
+
+// Forkwell application modeの状態を保存
+async function setForkwellApplicationMode(enabled) {
+  isForkwellApplicationMode = enabled;
+  return new Promise(resolve => {
+    chrome.storage.local.set({ forkwellApplicationModeActive: enabled }, function() {
+      console.log(`Forkwell application mode: ${enabled ? 'enabled' : 'disabled'}`);
+      resolve();
+    });
+  });
+}
+
+// Forkwell application modeの状態を取得
+async function getForkwellApplicationMode() {
+  return new Promise(resolve => {
+    chrome.storage.local.get({ forkwellApplicationModeActive: false }, function(result) {
+      isForkwellApplicationMode = result.forkwellApplicationModeActive;
+      resolve(result.forkwellApplicationModeActive);
+    });
+  });
+}
 
 // Forkwell用のURL収集機能
 async function collectForkwellJobUrls() {
@@ -84,14 +106,23 @@ async function collectForkwellJobUrls() {
   // storageに保存
   await saveForkwellUrls(jobUrls);
   
-  // popupに更新を通知
-  chrome.runtime.sendMessage({
-    action: 'updateUrlCount',
-    data: {
-      totalUrls: jobUrls.length,
-      newUrls: jobUrls.length
-    }
-  });
+  // background scriptに更新を通知（popupが開いていない場合もあるのでエラーを無視）
+  try {
+    chrome.runtime.sendMessage({
+      action: 'updateUrlCount',
+      data: {
+        totalUrls: jobUrls.length,
+        newUrls: jobUrls.length
+      }
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        // popupが開いていない場合は無視
+        console.log('Popup not available for URL count update');
+      }
+    });
+  } catch (error) {
+    console.log('Could not send URL count update:', error);
+  }
   
   return jobUrls.length > 0;
 }
@@ -138,25 +169,72 @@ function getForkwellUrlsByCompany() {
   });
 }
 
+// 処理済み会社を記録する
+async function recordProcessedCompany(company) {
+  return new Promise(resolve => {
+    chrome.storage.local.get({ forkwellProcessedCompanies: [] }, function(result) {
+      const processedCompanies = result.forkwellProcessedCompanies;
+      
+      if (!processedCompanies.includes(company)) {
+        processedCompanies.push(company);
+        chrome.storage.local.set({ forkwellProcessedCompanies: processedCompanies }, function() {
+          console.log(`Recorded processed company: ${company}`);
+          console.log(`Total processed companies: ${processedCompanies.length}`);
+          resolve();
+        });
+      } else {
+        console.log(`Company already processed: ${company}`);
+        resolve();
+      }
+    });
+  });
+}
+
+// 処理済み会社を取得
+async function getProcessedCompanies() {
+  return new Promise(resolve => {
+    chrome.storage.local.get({ forkwellProcessedCompanies: [] }, function(result) {
+      resolve(result.forkwellProcessedCompanies);
+    });
+  });
+}
+
 // Forkwell申込み処理
 async function processForkwellApplications() {
   console.log('Starting Forkwell application process...');
   
+  // Application modeを有効にする
+  await setForkwellApplicationMode(true);
+  
   const companyGroups = await getForkwellUrlsByCompany();
-  const companies = Object.keys(companyGroups);
+  const allCompanies = Object.keys(companyGroups);
+  const processedCompanies = await getProcessedCompanies();
   
-  console.log(`Processing ${companies.length} companies`);
+  // 未処理の会社のみをフィルタリング
+  const unprocessedCompanies = allCompanies.filter(company => !processedCompanies.includes(company));
   
-  for (let i = 0; i < companies.length; i++) {
+  console.log(`Total companies: ${allCompanies.length}`);
+  console.log(`Processed companies: ${processedCompanies.length}`);
+  console.log(`Unprocessed companies: ${unprocessedCompanies.length}`);
+  console.log('Unprocessed companies:', unprocessedCompanies);
+  
+  if (unprocessedCompanies.length === 0) {
+    console.log('All companies have been processed');
+    await setForkwellApplicationMode(false);
+    return;
+  }
+  
+  for (let i = 0; i < unprocessedCompanies.length; i++) {
     if (shouldStop) {
       console.log('Application process stopped by user');
+      await setForkwellApplicationMode(false);
       break;
     }
     
-    const company = companies[i];
+    const company = unprocessedCompanies[i];
     const jobs = companyGroups[company];
     
-    console.log(`Processing company ${i + 1}/${companies.length}: ${company} (${jobs.length} jobs)`);
+    console.log(`Processing company ${i + 1}/${unprocessedCompanies.length}: ${company} (${jobs.length} jobs)`);
     
     // 会社の最初の求人ページに移動
     const firstJob = jobs[0];
@@ -185,7 +263,7 @@ async function processForkwellApplications() {
     
     // 申込みボタンを探してクリック（タイムアウト付き）
     const applicationResult = await Promise.race([
-      clickForkwellApplicationButton(firstJob.url),
+      clickForkwellApplicationButton(firstJob.url, firstJob),
       new Promise(resolve => {
         setTimeout(() => {
           console.log('Application timeout, moving to next job...');
@@ -201,17 +279,54 @@ async function processForkwellApplications() {
       console.log(`Failed or skipped application for: ${firstJob.url}`);
     }
     
+    // 処理済み会社として記録（成功・失敗に関わらず）
+    await recordProcessedCompany(company);
+    
     // 次の会社まで待機
-    if (i < companies.length - 1) {
+    if (i < unprocessedCompanies.length - 1) {
       console.log('Waiting before processing next company...');
       await new Promise(resolve => setTimeout(resolve, 3000));
     }
   }
   
   console.log('Forkwell application process completed');
+  await setForkwellApplicationMode(false);
 }
 
-// 送信済みURLを記録する
+// 応募した会社の詳細情報を記録する
+async function recordAppliedCompany(jobUrl, company, title) {
+  return new Promise(resolve => {
+    chrome.storage.local.get({ forkwellAppliedCompanies: [] }, function(result) {
+      const appliedCompanies = result.forkwellAppliedCompanies;
+      
+      // 既に同じURLで応募済みかチェック
+      const existingApplication = appliedCompanies.find(app => app.url === jobUrl);
+      
+      if (!existingApplication) {
+        const applicationData = {
+          url: jobUrl,
+          company: company,
+          title: title,
+          appliedAt: new Date().toISOString(),
+          timestamp: Date.now()
+        };
+        
+        appliedCompanies.push(applicationData);
+        chrome.storage.local.set({ forkwellAppliedCompanies: appliedCompanies }, function() {
+          console.log(`Recorded applied company: ${company} - ${title}`);
+          console.log(`Applied at: ${applicationData.appliedAt}`);
+          console.log(`Total applied companies: ${appliedCompanies.length}`);
+          resolve();
+        });
+      } else {
+        console.log(`Company application already recorded: ${company} - ${title}`);
+        resolve();
+      }
+    });
+  });
+}
+
+// 送信済みURLを記録する（後方互換性のため残す）
 async function recordSubmittedUrl(url) {
   return new Promise(resolve => {
     chrome.storage.local.get({ forkwellSubmittedUrls: [] }, function(result) {
@@ -233,10 +348,26 @@ async function recordSubmittedUrl(url) {
 }
 
 // Forkwell申込みボタンをクリック
-async function clickForkwellApplicationButton(jobUrl) {
+async function clickForkwellApplicationButton(jobUrl, jobData = null) {
   console.log('Looking for application button...');
   
   try {
+    // ページから会社名と求人タイトルを取得
+    let company = '';
+    let title = '';
+    
+    if (jobData) {
+      company = jobData.company;
+      title = jobData.title;
+    } else {
+      // URLから会社名を抽出
+      const urlParts = jobUrl.split('/');
+      company = urlParts[3] || 'unknown'; // https://jobs.forkwell.com/company/jobs/xxxxx
+      
+      // ページタイトルから求人タイトルを取得
+      title = document.title || 'unknown';
+    }
+    
     // 「話を聞きたい」ボタンを探す
     const talkButton = document.querySelector('button.btn.btn-special');
     
@@ -285,9 +416,13 @@ async function clickForkwellApplicationButton(jobUrl) {
     // 送信完了まで待機
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // 送信成功したURLを記録
+    // 送信成功した場合、詳細情報を記録
     if (jobUrl) {
+      // 従来のURL記録（後方互換性）
       await recordSubmittedUrl(jobUrl);
+      
+      // 新しい詳細情報記録
+      await recordAppliedCompany(jobUrl, company, title);
     }
     
     console.log('Application submitted successfully');
@@ -660,7 +795,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // 自動開始設定をチェックして実行
-function checkAutoStart() {
+async function checkAutoStart() {
+  const currentSite = getCurrentSite();
+  
+  // Forkwell application modeが有効かチェック
+  const applicationModeActive = await getForkwellApplicationMode();
+  
+  if (currentSite === 'forkwell' && applicationModeActive) {
+    console.log('Forkwell application mode is active, continuing application process...');
+    setTimeout(() => processForkwellApplications(), 2000);
+    return;
+  }
+  
   chrome.storage.sync.get({ autoStart: true }, function(items) {
     if (items.autoStart) {
       console.log('Auto-start is enabled, starting auto process');
