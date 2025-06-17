@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Auto Like for Job Sites",
   "version": "1.1",
-  "description": "LAPRAS・Findy求人サイトで自動的にいいねボタンを押すChrome拡張機能",
+  "description": "LAPRAS・Findy・Forkwell求人サイトで自動的にいいねボタンを押すChrome拡張機能",
   "permissions": [
     "activeTab",
     "scripting",
@@ -11,7 +11,8 @@
   "host_permissions": [
     "https://lapras.com/*",
     "https://findy-code.io/*",
-    "https://findy.co.jp/*"
+    "https://findy.co.jp/*",
+    "https://jobs.forkwell.com/*"
   ],
   "content_scripts": [
     {
@@ -20,7 +21,8 @@
         "https://findy-code.io/recommends*",
         "https://findy-code.io/jobs*",
         "https://findy.co.jp/recommends*",
-        "https://findy.co.jp/jobs*"
+        "https://findy.co.jp/jobs*",
+        "https://jobs.forkwell.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

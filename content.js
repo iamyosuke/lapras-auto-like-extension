@@ -1,4 +1,4 @@
-// Auto Like Content Script for LAPRAS and Findy
+// Auto Like Content Script for LAPRAS, Findy, and Forkwell
 console.log('Auto Like content script loaded on:', window.location.href);
 console.log('Document ready state:', document.readyState);
 
@@ -9,6 +9,8 @@ function getCurrentSite() {
     return 'lapras';
   } else if (hostname.includes('findy-code.io') || hostname.includes('findy.co.jp')) {
     return 'findy';
+  } else if (hostname.includes('jobs.forkwell.com')) {
+    return 'forkwell';
   }
   return 'unknown';
 }
@@ -28,6 +30,12 @@ const SITE_CONFIGS = {
     clickDelay: 1500,
     nextPageDelay: 8000,
     maxRetries: 3
+  },
+  forkwell: {
+    linkSelector: 'a.link-inherit.job-list__link',
+    clickDelay: 1000,
+    nextPageDelay: 5000,
+    maxRetries: 3
   }
 };
 
@@ -37,6 +45,260 @@ let CONFIG = SITE_CONFIGS[getCurrentSite()] || SITE_CONFIGS.lapras;
 // 実行状態管理
 let isRunning = false;
 let shouldStop = false;
+
+// Forkwell用のURL収集機能
+async function collectForkwellJobUrls() {
+  const links = document.querySelectorAll(CONFIG.linkSelector);
+  console.log(`Found ${links.length} job links`);
+  
+  const jobUrls = [];
+  const companyGroups = {};
+  
+  links.forEach(link => {
+    const href = link.getAttribute('href');
+    if (href && href.startsWith('/')) {
+      const fullUrl = `https://jobs.forkwell.com${href}`;
+      const urlParts = href.split('/');
+      const companyName = urlParts[1]; // /companyname/jobs/xxxxx の companyname部分
+      
+      if (!companyGroups[companyName]) {
+        companyGroups[companyName] = [];
+      }
+      
+      companyGroups[companyName].push({
+        url: fullUrl,
+        title: link.textContent.trim(),
+        company: companyName
+      });
+      
+      jobUrls.push({
+        url: fullUrl,
+        title: link.textContent.trim(),
+        company: companyName
+      });
+    }
+  });
+  
+  console.log(`Collected ${jobUrls.length} job URLs from ${Object.keys(companyGroups).length} companies`);
+  
+  // storageに保存
+  await saveForkwellUrls(jobUrls);
+  
+  // popupに更新を通知
+  chrome.runtime.sendMessage({
+    action: 'updateUrlCount',
+    data: {
+      totalUrls: jobUrls.length,
+      newUrls: jobUrls.length
+    }
+  });
+  
+  return jobUrls.length > 0;
+}
+
+// ForkwellのURLをstorageに保存
+function saveForkwellUrls(urls) {
+  return new Promise(resolve => {
+    chrome.storage.local.get({ forkwellJobUrls: [] }, function(result) {
+      const existingUrls = result.forkwellJobUrls;
+      const newUrls = urls.filter(url => 
+        !existingUrls.some(existing => existing.url === url.url)
+      );
+      
+      if (newUrls.length > 0) {
+        const updatedUrls = [...existingUrls, ...newUrls];
+        chrome.storage.local.set({ forkwellJobUrls: updatedUrls }, function() {
+          console.log(`Saved ${newUrls.length} new URLs to storage. Total: ${updatedUrls.length}`);
+          resolve();
+        });
+      } else {
+        console.log('No new URLs to save');
+        resolve();
+      }
+    });
+  });
+}
+
+// 会社別にグループ化されたURLを取得
+function getForkwellUrlsByCompany() {
+  return new Promise(resolve => {
+    chrome.storage.local.get({ forkwellJobUrls: [] }, function(result) {
+      const urls = result.forkwellJobUrls;
+      const companyGroups = {};
+      
+      urls.forEach(job => {
+        if (!companyGroups[job.company]) {
+          companyGroups[job.company] = [];
+        }
+        companyGroups[job.company].push(job);
+      });
+      
+      resolve(companyGroups);
+    });
+  });
+}
+
+// Forkwell申込み処理
+async function processForkwellApplications() {
+  console.log('Starting Forkwell application process...');
+  
+  const companyGroups = await getForkwellUrlsByCompany();
+  const companies = Object.keys(companyGroups);
+  
+  console.log(`Processing ${companies.length} companies`);
+  
+  for (let i = 0; i < companies.length; i++) {
+    if (shouldStop) {
+      console.log('Application process stopped by user');
+      break;
+    }
+    
+    const company = companies[i];
+    const jobs = companyGroups[company];
+    
+    console.log(`Processing company ${i + 1}/${companies.length}: ${company} (${jobs.length} jobs)`);
+    
+    // 会社の最初の求人ページに移動
+    const firstJob = jobs[0];
+    console.log(`Navigating to: ${firstJob.url}`);
+    
+    // ページ移動
+    window.location.href = firstJob.url;
+    
+    // ページ読み込み完了まで待機（タイムアウト付き）
+    await new Promise(resolve => {
+      const timeout = setTimeout(() => {
+        console.log('Page load timeout, proceeding anyway...');
+        resolve();
+      }, 15000); // 15秒でタイムアウト
+      
+      const checkLoaded = () => {
+        if (window.location.href === firstJob.url && document.readyState === 'complete') {
+          clearTimeout(timeout);
+          resolve();
+        } else {
+          setTimeout(checkLoaded, 1000);
+        }
+      };
+      checkLoaded();
+    });
+    
+    // 申込みボタンを探してクリック（タイムアウト付き）
+    const applicationResult = await Promise.race([
+      clickForkwellApplicationButton(firstJob.url),
+      new Promise(resolve => {
+        setTimeout(() => {
+          console.log('Application timeout, moving to next job...');
+          resolve(false);
+        }, 10000); // 10秒でタイムアウト
+      })
+    ]);
+    
+    // 結果をログ出力
+    if (applicationResult) {
+      console.log(`Successfully applied to: ${firstJob.url}`);
+    } else {
+      console.log(`Failed or skipped application for: ${firstJob.url}`);
+    }
+    
+    // 次の会社まで待機
+    if (i < companies.length - 1) {
+      console.log('Waiting before processing next company...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
+  
+  console.log('Forkwell application process completed');
+}
+
+// 送信済みURLを記録する
+async function recordSubmittedUrl(url) {
+  return new Promise(resolve => {
+    chrome.storage.local.get({ forkwellSubmittedUrls: [] }, function(result) {
+      const submittedUrls = result.forkwellSubmittedUrls;
+      
+      if (!submittedUrls.includes(url)) {
+        submittedUrls.push(url);
+        chrome.storage.local.set({ forkwellSubmittedUrls: submittedUrls }, function() {
+          console.log(`Recorded submitted URL: ${url}`);
+          console.log(`Total submitted URLs: ${submittedUrls.length}`);
+          resolve();
+        });
+      } else {
+        console.log(`URL already recorded: ${url}`);
+        resolve();
+      }
+    });
+  });
+}
+
+// Forkwell申込みボタンをクリック
+async function clickForkwellApplicationButton(jobUrl) {
+  console.log('Looking for application button...');
+  
+  try {
+    // 「話を聞きたい」ボタンを探す
+    const talkButton = document.querySelector('button.btn.btn-special');
+    
+    if (!talkButton) {
+      console.log('Talk button not found, skipping this job');
+      return false;
+    }
+    
+    if (talkButton.disabled) {
+      console.log('Talk button is disabled, skipping this job');
+      return false;
+    }
+    
+    if (!talkButton.textContent.includes('話を聞きたい')) {
+      console.log('Talk button text does not match expected text, skipping this job');
+      return false;
+    }
+    
+    console.log('Found "話を聞きたい" button, clicking...');
+    talkButton.click();
+    
+    // モーダルまたはフォームが表示されるまで待機
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 「送信」ボタンを探す
+    const submitButton = document.querySelector('button.button.btn.btn-primary.ga-track-with-applikation');
+    
+    if (!submitButton) {
+      console.log('Submit button not found, skipping this job');
+      return false;
+    }
+    
+    if (submitButton.disabled) {
+      console.log('Submit button is disabled, skipping this job');
+      return false;
+    }
+    
+    if (!submitButton.textContent.includes('送信')) {
+      console.log('Submit button text does not match expected text, skipping this job');
+      return false;
+    }
+    
+    console.log('Found "送信" button, clicking...');
+    submitButton.click();
+    
+    // 送信完了まで待機
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 送信成功したURLを記録
+    if (jobUrl) {
+      await recordSubmittedUrl(jobUrl);
+    }
+    
+    console.log('Application submitted successfully');
+    return true;
+    
+  } catch (error) {
+    console.error('Error in clickForkwellApplicationButton:', error);
+    console.log('Skipping this job due to error');
+    return false;
+  }
+}
 
 // 現在のページ番号を取得
 function getCurrentPageNumber() {
@@ -188,6 +450,19 @@ function goToNextPage() {
       setTimeout(() => {
         window.location.href = currentUrl.toString();
       }, 1000);
+    } else if (currentSite === 'forkwell') {
+   
+      
+      // 次へボタンが見つからない場合は、ページ番号を上げてURLを変更
+      const currentUrl = new URL(window.location.href);
+      const nextPage = currentPage + 1;
+      currentUrl.searchParams.set('page', nextPage);
+      console.log(`Moving from page ${currentPage} to page ${nextPage}`);
+      console.log(`Next page URL: ${currentUrl.toString()}`);
+      
+      setTimeout(() => {
+        window.location.href = currentUrl.toString();
+      }, 1000);
     } else {
       // LAPRAS: 従来の方法
       const nextPageUrl = getNextPageUrl();
@@ -215,28 +490,43 @@ function waitForButtonsToAppear() {
     console.log('Waiting for buttons to appear...');
     
     const intervalId = setInterval(() => {
-      const buttons = document.querySelectorAll(CONFIG.buttonSelector);
-      const validButtons = Array.from(buttons).filter(button => {
-        if (button.disabled) return false;
+      const currentSite = getCurrentSite();
+      
+      if (currentSite === 'forkwell') {
+        // Forkwellの場合はリンクを探す
+        const links = document.querySelectorAll(CONFIG.linkSelector);
+        console.log(`Checking for links... Found ${links.length} job links`);
         
-        const currentSite = getCurrentSite();
-        if (currentSite === 'lapras') {
-          const labelElement = button.querySelector('.label');
-          return labelElement && labelElement.textContent.trim() === CONFIG.buttonTextFilter;
-        } else if (currentSite === 'findy') {
-          const buttonText = button.textContent.trim();
-          return buttonText.includes(CONFIG.buttonTextFilter);
+        if (links.length > 0) {
+          console.log('Links found! Starting process...');
+          clearInterval(intervalId);
+          resolve();
+          return;
         }
-        return false;
-      });
-      
-      console.log(`Checking for buttons... Found ${validButtons.length} valid buttons`);
-      
-      if (validButtons.length > 0) {
-        console.log('Buttons found! Starting process...');
-        clearInterval(intervalId);
-        resolve();
-        return;
+      } else {
+        // LAPRASとFindyの場合はボタンを探す
+        const buttons = document.querySelectorAll(CONFIG.buttonSelector);
+        const validButtons = Array.from(buttons).filter(button => {
+          if (button.disabled) return false;
+          
+          if (currentSite === 'lapras') {
+            const labelElement = button.querySelector('.label');
+            return labelElement && labelElement.textContent.trim() === CONFIG.buttonTextFilter;
+          } else if (currentSite === 'findy') {
+            const buttonText = button.textContent.trim();
+            return buttonText.includes(CONFIG.buttonTextFilter);
+          }
+          return false;
+        });
+        
+        console.log(`Checking for buttons... Found ${validButtons.length} valid buttons`);
+        
+        if (validButtons.length > 0) {
+          console.log('Buttons found! Starting process...');
+          clearInterval(intervalId);
+          resolve();
+          return;
+        }
       }
       
       elapsedTime += checkInterval;
@@ -278,7 +568,7 @@ function loadSettingsFromStorage() {
 // メイン処理
 async function main(customSettings = null) {
   if (isRunning) {
-    console.log('Auto-like process is already running');
+    console.log('Auto process is already running');
     return;
   }
 
@@ -286,7 +576,7 @@ async function main(customSettings = null) {
   shouldStop = false;
   
   const currentSite = getCurrentSite();
-  console.log(`Starting Auto Like process for ${currentSite.toUpperCase()}`);
+  console.log(`Starting process for ${currentSite.toUpperCase()}`);
   
   // storageから設定を読み込み
   await loadSettingsFromStorage();
@@ -304,21 +594,38 @@ async function main(customSettings = null) {
     });
   }
 
-  // ボタンが表示されるまで待機
+  // ボタンまたはリンクが表示されるまで待機
   await waitForButtonsToAppear();
 
   try {
-    const success = await clickAllLikeButtons();
-    
-    if (!shouldStop) {
-      if (success) {
-        console.log('All buttons clicked, moving to next page');
+    if (currentSite === 'forkwell') {
+      // ForkwellのURL収集処理
+      const success = await collectForkwellJobUrls();
+      
+      if (!shouldStop) {
+        if (success) {
+          console.log('URLs collected, moving to next page');
+        } else {
+          console.log('No URLs found, but still moving to next page');
+        }
+        goToNextPage();
       } else {
-        console.log('No buttons found or clicked, but still moving to next page');
+        console.log('Process was stopped, staying on current page');
       }
-      goToNextPage();
     } else {
-      console.log('Process was stopped, staying on current page');
+      // LAPRASとFindyのいいね処理
+      const success = await clickAllLikeButtons();
+      
+      if (!shouldStop) {
+        if (success) {
+          console.log('All buttons clicked, moving to next page');
+        } else {
+          console.log('No buttons found or clicked, but still moving to next page');
+        }
+        goToNextPage();
+      } else {
+        console.log('Process was stopped, staying on current page');
+      }
     }
   } catch (error) {
     console.error('Error in main process:', error);
@@ -332,7 +639,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Content script received message:', request);
   
   if (request.action === 'startAutoLike') {
-    console.log('Starting auto-like with settings:', request.settings);
+    console.log('Starting auto process with settings:', request.settings);
     main(request.settings);
     sendResponse({ status: 'started' });
   } else if (request.action === 'stopAutoLike') {
@@ -340,6 +647,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     isRunning = false;
     console.log('Stop signal received');
     sendResponse({ status: 'stopped' });
+  } else if (request.action === 'startForkwellApplications') {
+    console.log('Starting Forkwell applications');
+    processForkwellApplications();
+    sendResponse({ status: 'started' });
   } else {
     console.log('Unknown action received:', request.action);
     sendResponse({ status: 'unknown_action' });
@@ -352,7 +663,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function checkAutoStart() {
   chrome.storage.sync.get({ autoStart: true }, function(items) {
     if (items.autoStart) {
-      console.log('Auto-start is enabled, starting auto-like process');
+      console.log('Auto-start is enabled, starting auto process');
       setTimeout(() => main(), 1000);
     } else {
       console.log('Auto-start is disabled, waiting for manual start');

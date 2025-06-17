@@ -13,7 +13,8 @@ function isSupportedSite(url) {
          url.includes('findy-code.io/recommends') || 
          url.includes('findy-code.io/jobs') ||
          url.includes('findy.co.jp/recommends') || 
-         url.includes('findy.co.jp/jobs');
+         url.includes('findy.co.jp/jobs') ||
+         url.includes('jobs.forkwell.com');
 }
 
 // メッセージの中継処理
@@ -21,7 +22,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request);
   
   // popupからcontent scriptへのメッセージを中継
-  if (request.action === 'startAutoLike' || request.action === 'stopAutoLike') {
+  if (request.action === 'startAutoLike' || request.action === 'stopAutoLike' || request.action === 'startForkwellApplications') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         const tab = tabs[0];
@@ -41,7 +42,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.log('Tab URL:', tab.url);
             console.log('Tab status:', tab.status);
             
-         
+            // Content scriptが読み込まれていない可能性がある場合の対処
+            if (errorMessage.includes('Could not establish connection')) {
+              sendResponse({ error: 'Content script not loaded. Please refresh the page and try again.' });
+            } else {
+              sendResponse({ error: errorMessage });
+            }
           } else {
             console.log('Message sent successfully, response:', response);
             sendResponse(response || { status: 'no_response' });
