@@ -237,8 +237,13 @@ async function main(customSettings = null) {
     });
   }
 
-  // ページ遷移後の待機処理
-  await waitAfterPageLoad();
+  // ページ遷移後の待機処理（最初のページは待機しない）
+  const currentPage = getCurrentPageNumber();
+  if (currentPage > 1) {
+    await waitAfterPageLoad();
+  } else {
+    console.log('First page detected, skipping page load delay');
+  }
 
   try {
     const success = await clickAllLikeButtons();
