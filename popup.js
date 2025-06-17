@@ -32,26 +32,51 @@ document.addEventListener('DOMContentLoaded', function() {
   // 設定を読み込む
   function loadSettings() {
     chrome.storage.sync.get({
-      clickDelay: 1000,
-      nextPageDelay: 2000,
+      laprasClickDelay: 1000,
+      laprasNextPageDelay: 10000,
+      findyClickDelay: 1500,
+      findyNextPageDelay: 8000,
       autoStart: true
     }, function(items) {
-      clickDelayInput.value = items.clickDelay;
-      nextPageDelayInput.value = items.nextPageDelay;
-      autoStartInput.checked = items.autoStart;
+      // 現在のタブのサイトに応じて設定を表示
+      chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+        const currentTab = tabs[0];
+        if (currentTab && currentTab.url.includes('findy')) {
+          clickDelayInput.value = items.findyClickDelay;
+          nextPageDelayInput.value = items.findyNextPageDelay;
+        } else {
+          // デフォルトはLAPRAS設定
+          clickDelayInput.value = items.laprasClickDelay;
+          nextPageDelayInput.value = items.laprasNextPageDelay;
+        }
+        autoStartInput.checked = items.autoStart;
+      });
     });
   }
 
   // 設定を保存する
   function saveSettings() {
-    const settings = {
-      clickDelay: parseInt(clickDelayInput.value),
-      nextPageDelay: parseInt(nextPageDelayInput.value),
-      autoStart: autoStartInput.checked
-    };
+    // 現在のタブのサイトに応じて設定を保存
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+      const currentTab = tabs[0];
+      const clickDelay = parseInt(clickDelayInput.value);
+      const nextPageDelay = parseInt(nextPageDelayInput.value);
+      
+      let settings = {
+        autoStart: autoStartInput.checked
+      };
+      
+      if (currentTab && currentTab.url.includes('findy')) {
+        settings.findyClickDelay = clickDelay;
+        settings.findyNextPageDelay = nextPageDelay;
+      } else {
+        settings.laprasClickDelay = clickDelay;
+        settings.laprasNextPageDelay = nextPageDelay;
+      }
 
-    chrome.storage.sync.set(settings, function() {
-      updateStatus('Settings saved', 'success');
+      chrome.storage.sync.set(settings, function() {
+        updateStatus('Settings saved', 'success');
+      });
     });
   }
 

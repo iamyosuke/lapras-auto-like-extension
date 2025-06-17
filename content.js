@@ -151,6 +151,7 @@ async function clickAllLikeButtons() {
       if (i === 0) {
         console.log('First button clicked, no delay for next click');
       } else {
+        console.log(`Waiting ${CONFIG.clickDelay}ms before next click...`);
         await new Promise(resolve => setTimeout(resolve, CONFIG.clickDelay));
       }
     }
@@ -204,10 +205,73 @@ function goToNextPage() {
   }
 }
 
-// ページ遷移後の待機処理
-function waitAfterPageLoad() {
+// ページ読み込み後にボタンを定期的に探す
+function waitForButtonsToAppear() {
   return new Promise(resolve => {
-    setTimeout(resolve, CONFIG.nextPageDelay);
+    const checkInterval = 1000; // 1秒間隔でチェック
+    const maxWaitTime = 30000; // 最大30秒待機
+    let elapsedTime = 0;
+    
+    console.log('Waiting for buttons to appear...');
+    
+    const intervalId = setInterval(() => {
+      const buttons = document.querySelectorAll(CONFIG.buttonSelector);
+      const validButtons = Array.from(buttons).filter(button => {
+        if (button.disabled) return false;
+        
+        const currentSite = getCurrentSite();
+        if (currentSite === 'lapras') {
+          const labelElement = button.querySelector('.label');
+          return labelElement && labelElement.textContent.trim() === CONFIG.buttonTextFilter;
+        } else if (currentSite === 'findy') {
+          const buttonText = button.textContent.trim();
+          return buttonText.includes(CONFIG.buttonTextFilter);
+        }
+        return false;
+      });
+      
+      console.log(`Checking for buttons... Found ${validButtons.length} valid buttons`);
+      
+      if (validButtons.length > 0) {
+        console.log('Buttons found! Starting process...');
+        clearInterval(intervalId);
+        resolve();
+        return;
+      }
+      
+      elapsedTime += checkInterval;
+      if (elapsedTime >= maxWaitTime) {
+        console.log('Max wait time reached, proceeding anyway...');
+        clearInterval(intervalId);
+        resolve();
+      }
+    }, checkInterval);
+  });
+}
+
+// storageから設定を読み込み
+function loadSettingsFromStorage() {
+  return new Promise(resolve => {
+    chrome.storage.sync.get({
+      laprasClickDelay: 1000,
+      laprasNextPageDelay: 10000,
+      findyClickDelay: 1500,
+      findyNextPageDelay: 8000
+    }, function(items) {
+      const currentSite = getCurrentSite();
+      
+      if (currentSite === 'findy') {
+        CONFIG.clickDelay = items.findyClickDelay;
+        CONFIG.nextPageDelay = items.findyNextPageDelay;
+        console.log(`Loaded Findy settings: clickDelay=${CONFIG.clickDelay}, nextPageDelay=${CONFIG.nextPageDelay}`);
+      } else {
+        CONFIG.clickDelay = items.laprasClickDelay;
+        CONFIG.nextPageDelay = items.laprasNextPageDelay;
+        console.log(`Loaded LAPRAS settings: clickDelay=${CONFIG.clickDelay}, nextPageDelay=${CONFIG.nextPageDelay}`);
+      }
+      
+      resolve();
+    });
   });
 }
 
@@ -224,6 +288,9 @@ async function main(customSettings = null) {
   const currentSite = getCurrentSite();
   console.log(`Starting Auto Like process for ${currentSite.toUpperCase()}`);
   
+  // storageから設定を読み込み
+  await loadSettingsFromStorage();
+  
   // カスタム設定があれば適用
   if (customSettings) {
     CONFIG.clickDelay = customSettings.clickDelay || CONFIG.clickDelay;
@@ -237,13 +304,8 @@ async function main(customSettings = null) {
     });
   }
 
-  // ページ遷移後の待機処理（最初のページは待機しない）
-  const currentPage = getCurrentPageNumber();
-  if (currentPage > 1) {
-    await waitAfterPageLoad();
-  } else {
-    console.log('First page detected, skipping page load delay');
-  }
+  // ボタンが表示されるまで待機
+  await waitForButtonsToAppear();
 
   try {
     const success = await clickAllLikeButtons();
