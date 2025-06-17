@@ -1,6 +1,12 @@
-import { isSupportedSite } from "./background";
+// Popup script for Auto Like for Job Sites extension
 
-// Popup script for LAPRAS Auto Like extension
+// サポートされているサイトかチェック
+function isSupportedSite(url) {
+  if (!url) return false;
+  return url.includes('lapras.com/jobs/search') || 
+         url.includes('findy-code.io') || 
+         url.includes('findy.co.jp');
+}
 document.addEventListener('DOMContentLoaded', function() {
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
@@ -138,7 +144,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // 成功メッセージは3秒後に消す
     if (type === 'success') {
       setTimeout(() => {
-        status.textContent = 'Ready to start auto-liking on LAPRAS job search pages';
+        status.textContent = 'Ready to start auto-liking on LAPRAS or Findy job search pages';
         status.className = 'status status-info';
       }, 3000);
     }
@@ -147,10 +153,10 @@ document.addEventListener('DOMContentLoaded', function() {
   // 現在のタブの状態をチェック
   chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
     const currentTab = tabs[0];
-    if (currentTab && currentTab.url.includes('lapras.com/jobs/search')) {
-      updateStatus('Ready to start on LAPRAS job search page', 'success');
+    if (currentTab && isSupportedSite(currentTab.url)) {
+      updateStatus('Ready to start on supported job search page', 'success');
     } else {
-      updateStatus('Navigate to LAPRAS job search page to use this extension', 'info');
+      updateStatus('Navigate to LAPRAS or Findy job search page to use this extension', 'info');
     }
   });
 });

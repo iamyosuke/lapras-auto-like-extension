@@ -7,7 +7,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // サポートされているサイトかチェック
-export function isSupportedSite(url) {
+function isSupportedSite(url) {
   if (!url) return false;
   return url.includes('lapras.com/jobs/search') || 
          url.includes('findy-code.io') || 
